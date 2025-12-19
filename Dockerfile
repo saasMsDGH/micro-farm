@@ -28,6 +28,13 @@ COPY services/${SERVICE_NAME}/ .
 # CGO_ENABLED=0 est vital pour scratch
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server .
 
+
+# 2. PROVIDER FFMPEG STATIQUE
+FROM alpine:latest AS ffmpeg-provider
+RUN wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
+    && tar xvf ffmpeg-release-amd64-static.tar.xz \
+    && mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/
+
 # ==============================================================================
 # FINAL IMAGE (Scratch - Ultra léger ~10-20Mo)
 # ==============================================================================
@@ -39,6 +46,7 @@ ARG SERVICE_NAME
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=ffmpeg-provider /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 
 # Copie du binaire
 COPY --from=builder /app/server /server
