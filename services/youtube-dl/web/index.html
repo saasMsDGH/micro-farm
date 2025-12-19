@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Media Downloader</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            500: '#FF0000', // YouTube Red
+                            600: '#CC0000',
+                        },
+                        dark: {
+                            bg: '#0f172a',
+                            surface: '#1e293b',
+                        }
+                    },
+                    animation: {
+                        'spin-slow': 'spin 3s linear infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Effet Glassmorphism */
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Animation de chargement */
+        .loader {
+            border-top-color: #FF0000;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body class="bg-dark-bg text-white h-screen flex flex-col overflow-hidden relative selection:bg-brand-500 selection:text-white">
+
+    <div class="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div class="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-brand-500/20 rounded-full blur-[100px] mix-blend-screen"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px] mix-blend-screen"></div>
+    </div>
+
+    <header class="w-full p-6 flex justify-between items-center z-10">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center shadow-lg shadow-brand-500/30">
+                <span class="material-symbols-outlined text-white text-sm">play_arrow</span>
+            </div>
+            <span class="font-bold text-lg tracking-tight">MicroDl</span>
+        </div>
+        <div class="text-xs font-medium text-slate-400 border border-slate-700 px-3 py-1 rounded-full">
+            v1.0.0 • Go Powered
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-col items-center justify-center p-4 w-full max-w-2xl mx-auto z-10">
+        
+        <div class="text-center mb-10 space-y-4">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 pb-2">
+                Téléchargeur Ultra-Rapide
+            </h1>
+            <p class="text-slate-400 text-lg max-w-lg mx-auto leading-relaxed">
+                Sauvegardez vos vidéos favorites instantanément. <br>
+                <span class="text-slate-500 text-sm">Pas de pubs. Pas de trackers. Streaming direct.</span>
+            </p>
+        </div>
+
+        <div class="w-full glass rounded-2xl p-2 shadow-2xl shadow-black/50 transition-all duration-300 focus-within:ring-2 focus-within:ring-brand-500/50 focus-within:border-brand-500/50 border border-slate-700 relative">
+            
+            <form id="dlForm" class="flex flex-col md:flex-row gap-2" onsubmit="handleDownload(event)">
+                <div class="relative flex-1 group">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <span class="material-symbols-outlined text-slate-500 group-focus-within:text-brand-500 transition-colors">link</span>
+                    </div>
+                    <input 
+                        type="text" 
+                        id="videoUrl" 
+                        placeholder="Collez le lien YouTube ici..." 
+                        class="block w-full pl-10 pr-12 py-4 bg-transparent text-white placeholder-slate-500 border-none focus:ring-0 text-base font-medium"
+                        autocomplete="off"
+                    >
+                    <button type="button" id="pasteBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-white transition-colors" title="Coller">
+                        <span class="material-symbols-outlined text-sm">content_paste</span>
+                    </button>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="submitBtn"
+                    class="bg-gradient-to-br from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-500 text-white font-bold py-3 px-8 rounded-xl transition-all transform active:scale-95 shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 min-w-[160px]"
+                >
+                    <span id="btnText">Télécharger</span>
+                    <span id="btnIcon" class="material-symbols-outlined">download</span>
+                    <div id="btnSpinner" class="hidden loader ease-linear rounded-full border-2 border-t-2 border-white/20 h-5 w-5"></div>
+                </button>
+            </form>
+
+        </div>
+
+        <div id="statusMsg" class="mt-6 h-6 text-sm font-medium transition-all opacity-0 transform translate-y-2 text-center"></div>
+
+    </main>
+
+    <footer class="w-full p-6 text-center text-slate-600 text-xs">
+        &copy; 2025 MicroFarm SaaS. Dockerized & Optimized.
+    </footer>
+
+    <script>
+        const form = document.getElementById('dlForm');
+        const input = document.getElementById('videoUrl');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const btnIcon = document.getElementById('btnIcon');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const statusMsg = document.getElementById('statusMsg');
+        const pasteBtn = document.getElementById('pasteBtn');
+
+        // Regex pour extraire l'ID Youtube (Supporte short links, embeds, etc.)
+        const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i;
+
+        // Gestion du bouton "Coller"
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                input.value = text;
+                input.focus();
+            } catch (err) {
+                showStatus('Impossible d\'accéder au presse-papier', 'text-red-500');
+            }
+        });
+
+        function setLoading(isLoading) {
+            if (isLoading) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-75', 'cursor-not-allowed');
+                btnText.innerText = "Traitement...";
+                btnIcon.classList.add('hidden');
+                btnSpinner.classList.remove('hidden');
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+                btnText.innerText = "Télécharger";
+                btnIcon.classList.remove('hidden');
+                btnSpinner.classList.add('hidden');
+            }
+        }
+
+        function showStatus(msg, colorClass) {
+            statusMsg.innerText = msg;
+            statusMsg.className = `mt-6 h-6 text-sm font-medium transition-all transform translate-y-0 opacity-100 text-center ${colorClass}`;
+            
+            // Auto hide après 5s
+            setTimeout(() => {
+                statusMsg.classList.add('opacity-0', 'translate-y-2');
+            }, 5000);
+        }
+
+        async function handleDownload(e) {
+            e.preventDefault();
+            const url = input.value.trim();
+
+            if (!url) {
+                showStatus('Veuillez entrer une URL valide.', 'text-red-400');
+                input.focus();
+                return;
+            }
+
+            const match = url.match(ytRegex);
+            if (!match || !match[1]) {
+                showStatus('Lien YouTube non reconnu.', 'text-red-400');
+                return;
+            }
+
+            const videoID = match[1];
+            
+            // UI Loading
+            setLoading(true);
+            showStatus('Connexion aux serveurs de streaming...', 'text-blue-400');
+
+            // Astuce UX: On attend un tout petit peu pour montrer que ça bosse, 
+            // puis on déclenche le téléchargement navigateur
+            setTimeout(() => {
+                // Déclenchement du téléchargement via l'API Go
+                // Le navigateur va gérer le stream comme un téléchargement de fichier
+                window.location.href = `/api/stream?v=${videoID}`;
+                
+                // On reset l'UI
+                setLoading(false);
+                showStatus('Téléchargement lancé ! 🚀', 'text-green-400');
+                input.value = ''; // Clean input
+            }, 800);
+        }
+    </script>
+</body>
+</html>

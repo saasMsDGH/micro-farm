@@ -1,0 +1,31 @@
+[2025-12-19 00:56:21] Source  : .
+[2025-12-19 00:56:21] Sortie  : project_export.md
+[2025-12-19 00:56:21] Fichiers trouvés (avant filtre): 24
+[2025-12-19 00:56:21] Fichiers à concaténer (après filtre): 24 (exclus auto:0 dir:0 file:0)
+[2025-12-19 00:56:21] Concatène [1] .air.toml (size=381)
+[2025-12-19 00:56:21] Concatène [2] .github/workflows/ci-cd.yml (size=2094)
+[2025-12-19 00:56:21] Concatène [3] Dockerfile (size=2067)
+[2025-12-19 00:56:21] Concatène [4] Makefile (size=5396)
+[2025-12-19 00:56:21] Concatène [5] k8s/youtube-dl/deployment.yaml (size=1343)
+[2025-12-19 00:56:21] Concatène [6] k8s/youtube-dl/ingress.yaml (size=872)
+[2025-12-19 00:56:21] Concatène [7] k8s/youtube-dl/ratelimit.yaml (size=211)
+[2025-12-19 00:56:21] Concatène [8] k8s/youtube-dl/service.yaml (size=180)
+[2025-12-19 00:56:21] Concatène [9] project_export.log (size=801)
+[2025-12-19 00:56:21] Concatène [10] services/bank-parser/go.mod (size=235)
+[2025-12-19 00:56:21] Concatène [11] services/bank-parser/go.sum (size=867)
+[2025-12-19 00:56:21] Concatène [12] services/bank-parser/main.go (size=786)
+[2025-12-19 00:56:21] Concatène [13] services/geo-tools/go.mod (size=68)
+[2025-12-19 00:56:21] Concatène [14] services/geo-tools/main.go (size=17)
+[2025-12-19 00:56:21] Concatène [15] services/img-opt/go.mod (size=66)
+[2025-12-19 00:56:21] Concatène [16] services/img-opt/main.go (size=15)
+[2025-12-19 00:56:21] Concatène [17] services/pdf-gen/go.mod (size=66)
+[2025-12-19 00:56:21] Concatène [18] services/pdf-gen/main.go (size=15)
+[2025-12-19 00:56:21] Concatène [19] services/qrcode-gen/go.mod (size=69)
+[2025-12-19 00:56:21] Concatène [20] services/qrcode-gen/main.go (size=15)
+[2025-12-19 00:56:21] Concatène [21] services/youtube-dl/go.mod (size=475)
+[2025-12-19 00:56:21] Concatène [22] services/youtube-dl/go.sum (size=2614)
+[2025-12-19 00:56:21] Concatène [23] services/youtube-dl/main.go (size=3994)
+[2025-12-19 00:56:21] Concatène [24] services/youtube-dl/web/index.html (size=9615)
+[2025-12-19 00:56:21] Concaténation Markdown terminée : 24 fichier(s), 32262 octets.
+[2025-12-19 00:56:21] Aucune règle d’anonymisation — étape sautée.
+[2025-12-19 00:56:21] Terminé. Log détaillé: project_export.log
