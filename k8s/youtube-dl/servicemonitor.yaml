@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: youtube-dl-monitor
+  namespace: apps
+  labels:
+    # Ce label doit correspondre au serviceMonitorSelector de ton instance Prometheus
+    release: prometheus 
+    app: youtube-dl
+spec:
+  selector:
+    matchLabels:
+      # Doit correspondre aux labels de ton Service K8s
+      app: youtube-dl
+  namespaceSelector:
+    matchNames:
+      - apps
+  endpoints:
+  - port: http # Nom du port défini dans ton Service
+    path: /metrics
+    interval: 15s
+    scrapeTimeout: 10s

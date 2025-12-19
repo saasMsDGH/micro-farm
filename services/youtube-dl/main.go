@@ -6,9 +6,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
+	"regexp"
+	"sort"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/kkdai/youtube/v2"
@@ -17,117 +23,144 @@ import (
 //go:embed web/*
 var webFS embed.FS
 
-// CONFIGURATION DE LA FERME
-const (
-	MaxConcurrentDownloads = 5                // Nombre de téléchargements actifs simultanés
-	MaxQueueSize           = 20               // Nombre de clients autorisés à attendre
-	QueueTimeout           = 30 * time.Second // Temps max d'attente dans la file
+var (
+	ytIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
+	logger    = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Paramètres de pilotage et métriques
+	activeDownloads int32 = 0
+	maxConcurrent   = 5
+	maxQueue        = 5
 )
 
-// Le sémaphore limite les actions simultanées
-var semaphore = make(chan struct{}, MaxConcurrentDownloads)
+// Gestion des flux et de la file d'attente
+var semaphore = make(chan struct{}, maxConcurrent)
+var queueControl = make(chan struct{}, maxConcurrent+maxQueue)
 
 func main() {
 	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	if port == "" { port = "8080" }
 
-	// 1. Frontend
-	contentStatic, err := fs.Sub(webFS, "web")
-	if err != nil {
-		log.Fatal(err)
-	}
-	http.Handle("/", http.FileServer(http.FS(contentStatic)))
-
-	// 2. API avec Middleware de Queue
-	http.HandleFunc("/api/stream", queueMiddleware(streamHandler))
-
-	// 3. Healthcheck pour K8s
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux := http.NewServeMux()
+	contentStatic, _ := fs.Sub(webFS, "web")
+	
+	mux.Handle("/", http.FileServer(http.FS(contentStatic)))
+	mux.HandleFunc("/api/stream", queueMiddleware(streamHandler))
+	mux.HandleFunc("/metrics", metricsHandler)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	log.Printf("📺 YouTube Service (Queue: %d, Slots: %d) on :%s", MaxQueueSize, MaxConcurrentDownloads, port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		logger.Info("SaaS YouTube-DL démarré", "port", port, "limit", maxConcurrent)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Erreur serveur", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-stop
+	logger.Info("Arrêt propre en cours...")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	server.Shutdown(ctx)
+}
+
+func queueMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 1. Admission dans la file d'attente globale du Pod
+		select {
+		case queueControl <- struct{}{}:
+			defer func() { <-queueControl }()
+		default:
+			http.Error(w, "Serveur saturé (Queue pleine)", http.StatusServiceUnavailable)
+			return
+		}
+
+		// 2. Attribution d'un slot de téléchargement actif
+		select {
+		case semaphore <- struct{}{}:
+			atomic.AddInt32(&activeDownloads, 1)
+			defer func() {
+				<-semaphore
+				atomic.AddInt32(&activeDownloads, -1)
+			}()
+			next(w, r)
+		case <-time.After(30 * time.Second):
+			http.Error(w, "Temps d'attente dépassé", http.StatusServiceUnavailable)
+		}
 	}
 }
 
-// Middleware qui gère la file d'attente
-func queueMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// A. On essaie d'entrer dans la file d'attente
-		// On utilise un select non-bloquant pour voir si le serveur est saturé
-		if len(semaphore) >= MaxConcurrentDownloads {
-			// Si on est déjà au max d'actifs, est-ce qu'on accepte l'attente ?
-			// Ici, on fait une logique simple : Go gère très bien les goroutines en attente.
-			// Mais pour éviter d'avoir 1000 connexions ouvertes qui attendent, on peut check une limite logique.
-			// Pour cet exemple, on laisse Go gérer l'attente mais avec un Timeout strict.
-		}
-
-		// Context pour l'annulation (si le client ferme l'onglet) + Timeout d'attente
-		ctx, cancel := context.WithTimeout(r.Context(), QueueTimeout)
-		defer cancel()
-
-		log.Printf("[Queue] Client %s demande un ticket...", r.RemoteAddr)
-
-		select {
-		case semaphore <- struct{}{}:
-			// B. TICKET OBTENU ! On traite la requête.
-			// On libérera le ticket à la fin du traitement
-			defer func() { <-semaphore }()
-			log.Printf("[Start] Client %s commence le téléchargement", r.RemoteAddr)
-			next(w, r)
-			log.Printf("[End] Client %s a fini", r.RemoteAddr)
-
-		case <-ctx.Done():
-			// C. TROP LONG ou ANNULÉ
-			log.Printf("[Drop] Client %s a abandonné ou timeout", r.RemoteAddr)
-			http.Error(w, "Serveur trop occupé (File d'attente pleine ou temps dépassé)", http.StatusServiceUnavailable)
-			return
-		}
-	}
+func metricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintf(w, "# HELP active_downloads Téléchargements en cours\n")
+	fmt.Fprintf(w, "# TYPE active_downloads gauge\n")
+	fmt.Fprintf(w, "active_downloads %d\n", atomic.LoadInt32(&activeDownloads))
 }
 
 func streamHandler(w http.ResponseWriter, r *http.Request) {
 	videoID := r.URL.Query().Get("v")
-	if videoID == "" {
-		http.Error(w, "Missing video ID", http.StatusBadRequest)
+	quality := r.URL.Query().Get("q")
+
+	if !ytIDRegex.MatchString(videoID) {
+		http.Error(w, "ID Invalide", http.StatusBadRequest)
 		return
 	}
 
 	client := youtube.Client{}
 	video, err := client.GetVideo(videoID)
 	if err != nil {
-		log.Printf("Error GetVideo: %v", err)
-		http.Error(w, "Video not found", http.StatusNotFound)
+		http.Error(w, "Vidéo introuvable", http.StatusNotFound)
 		return
 	}
 
-	formats := video.Formats.WithAudioChannels().Type("video/mp4")
-	if len(formats) == 0 {
-		http.Error(w, "No MP4 format found", http.StatusInternalServerError)
-		return
-	}
-
-	// Récupération du stream
-	stream, size, err := client.GetStream(video, &formats[0])
-	if err != nil {
-		log.Printf("Error GetStream: %v", err)
-		http.Error(w, "Stream error", http.StatusInternalServerError)
-		return
-	}
-	defer stream.Close()
+	vFormats := video.Formats.Type("video/mp4")
+	sort.Slice(vFormats, func(i, j int) bool { return vFormats[i].Height > vFormats[j].Height })
+	
+	aFormats := video.Formats.WithAudioChannels()
+	sort.Slice(aFormats, func(i, j int) bool { return aFormats[i].Bitrate > aFormats[j].Bitrate })
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q.mp4", video.Title))
 	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 
-	// Streaming avec protection de coupure
-	// Si le client coupe, le io.Copy s'arrête et libère le sémaphore
-	if _, err := io.Copy(w, stream); err != nil {
-		log.Printf("Connection closed during stream: %v", err)
+	if quality == "720" || quality == "" {
+		stream, size, _ := client.GetStream(video, &vFormats[0])
+		defer stream.Close()
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+		io.Copy(w, stream)
+	} else {
+		// Muxing HD avec FFMPEG statique
+		vStream, _, _ := client.GetStream(video, &vFormats[0])
+		aStream, _, _ := client.GetStream(video, &aFormats[0])
+		defer vStream.Close()
+		defer aStream.Close()
+
+		cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-i", "pipe:3", "-c:v", "copy", "-c:a", "aac", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1")
+		cmd.Stdin = vStream
+		cmd.ExtraFiles = []*os.File{streamToFile(aStream)}
+		cmd.Stdout = w
+		cmd.Run()
 	}
+}
+
+func streamToFile(r io.ReadCloser) *os.File {
+	pr, pw, _ := os.Pipe()
+	go func() {
+		defer pw.Close()
+		io.Copy(pw, r)
+		r.Close()
+	}()
+	return pr
 }

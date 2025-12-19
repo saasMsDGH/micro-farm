@@ -35,9 +35,14 @@ spec:
           
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "100m"
+              memory: "128Mi"
+              cpu: "200m"
             limits:
               # 256Mi est parfait pour ton algo de streaming (io.Copy)
               memory: "256Mi"
               cpu: "1000m"
+
+          securityContext:
+            readOnlyRootFilesystem: true # Sécurité renforcée : pas d'écriture disque
+            runAsNonRoot: true
+            runAsUser: 10001
