@@ -93,7 +93,7 @@ jobs:
             echo "🚀 Deploying $SERVICE:$VERSION to OVH Cluster"
             
             # Injection des valeurs dans les manifests
-            sed -i "s|image: .*|image: $IMAGE|g" k8s/$SERVICE/deployment.yaml
+            sed -i "s|DOCKER_IMAGE_PLACEHOLDER|$IMAGE|g" k8s/$SERVICE/deployment.yaml
             
             # Injection spécifique pour youtube-dl (Cookies)
             if [ "$SERVICE" == "youtube-dl" ]; then

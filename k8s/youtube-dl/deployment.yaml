@@ -24,6 +24,8 @@ spec:
             capabilities:
               add: ["NET_ADMIN"]
           env:
+            - name: HTTP_CONTROL_SERVER_ADDRESS
+              value: ":8000"
             - name: VPN_SERVICE_PROVIDER
               value: "nordvpn"
             - name: VPN_TYPE
@@ -45,7 +47,7 @@ spec:
 
         # --- CONTENEUR 2 : TON APP GO (Client réseau) ---
         - name: youtube-dl
-          image: spadmdck/youtube-dl:latest
+          image: DOCKER_IMAGE_PLACEHOLDER
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
