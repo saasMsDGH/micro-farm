@@ -27,51 +27,68 @@ var (
 	ytIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{11}$`)
 	logger    = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// Paramètres de pilotage et métriques
 	activeDownloads int32 = 0
-	maxConcurrent   = 5
-	maxQueue        = 5
+	maxConcurrent         = 5
+	maxQueue              = 5
 )
 
-// Gestion des flux et de la file d'attente
 var semaphore = make(chan struct{}, maxConcurrent)
 var queueControl = make(chan struct{}, maxConcurrent+maxQueue)
 
 func main() {
 	port := os.Getenv("PORT")
-	if port == "" { port = "8080" }
+	if port == "" {
+		port = "8080"
+	}
+
+	// Vérification de la présence de ffmpeg au démarrage
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		logger.Error("FFMPEG binaire non trouvé dans le PATH", "error", err)
+	}
 
 	mux := http.NewServeMux()
+
+	// Assets statiques
 	contentStatic, _ := fs.Sub(webFS, "web")
-	
 	mux.Handle("/", http.FileServer(http.FS(contentStatic)))
+
+	// API avec gestion d'erreurs détaillée
 	mux.HandleFunc("/api/stream", queueMiddleware(streamHandler))
 	mux.HandleFunc("/metrics", metricsHandler)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	// Middleware de logging global pour voir les 404 réelles
+	loggingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		logger.Info("Requête reçue",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote", r.RemoteAddr,
+			"agent", r.UserAgent())
+		mux.ServeHTTP(w, r)
+		logger.Debug("Requête traitée", "duration", time.Since(start))
 	})
 
 	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:        ":" + port,
+		Handler:     loggingHandler,
+		ReadTimeout: 15 * time.Second,
+		IdleTimeout: 120 * time.Second,
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("SaaS YouTube-DL démarré", "port", port, "limit", maxConcurrent)
+		logger.Info("Démarrage YouTube-DL", "port", port, "version", "0.1.6")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("Erreur serveur", "err", err)
+			logger.Error("Erreur fatale serveur", "err", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-stop
-	logger.Info("Arrêt propre en cours...")
+	logger.Info("Arrêt du pod...")
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	server.Shutdown(ctx)
@@ -115,43 +132,64 @@ func streamHandler(w http.ResponseWriter, r *http.Request) {
 	quality := r.URL.Query().Get("q")
 
 	if !ytIDRegex.MatchString(videoID) {
-		http.Error(w, "ID Invalide", http.StatusBadRequest)
+		logger.Warn("ID Vidéo refusé par Regex", "id", videoID)
+		http.Error(w, "Format d'ID YouTube invalide", http.StatusBadRequest)
 		return
 	}
 
 	client := youtube.Client{}
 	video, err := client.GetVideo(videoID)
 	if err != nil {
-		http.Error(w, "Vidéo introuvable", http.StatusNotFound)
+		logger.Error("Erreur API YouTube", "id", videoID, "error", err.Error())
+		http.Error(w, fmt.Sprintf("Erreur YouTube: %v", err), http.StatusNotFound)
 		return
 	}
 
+	// Filtrage des formats
 	vFormats := video.Formats.Type("video/mp4")
+	if len(vFormats) == 0 {
+		logger.Error("Aucun format vidéo trouvé", "id", videoID)
+		http.Error(w, "Vidéo non disponible en MP4", http.StatusInternalServerError)
+		return
+	}
 	sort.Slice(vFormats, func(i, j int) bool { return vFormats[i].Height > vFormats[j].Height })
-	
-	aFormats := video.Formats.WithAudioChannels()
-	sort.Slice(aFormats, func(i, j int) bool { return aFormats[i].Bitrate > aFormats[j].Bitrate })
 
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q.mp4", video.Title))
 	w.Header().Set("Content-Type", "video/mp4")
 
 	if quality == "720" || quality == "" {
-		stream, size, _ := client.GetStream(video, &vFormats[0])
+		stream, size, err := client.GetStream(video, &vFormats[0])
+		if err != nil {
+			logger.Error("Erreur initialisation flux", "id", videoID, "err", err)
+			http.Error(w, "Erreur de stream", http.StatusInternalServerError)
+			return
+		}
 		defer stream.Close()
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 		io.Copy(w, stream)
 	} else {
-		// Muxing HD avec FFMPEG statique
+		// Logique Muxing HD avec log spécifique FFmpeg
+		aFormats := video.Formats.WithAudioChannels()
+		if len(aFormats) == 0 {
+			http.Error(w, "Audio non trouvé", http.StatusInternalServerError)
+			return
+		}
+		sort.Slice(aFormats, func(i, j int) bool { return aFormats[i].Bitrate > aFormats[j].Bitrate })
+
 		vStream, _, _ := client.GetStream(video, &vFormats[0])
 		aStream, _, _ := client.GetStream(video, &aFormats[0])
 		defer vStream.Close()
 		defer aStream.Close()
 
+		logger.Info("Démarrage du Muxing FFmpeg", "id", videoID, "quality", quality)
 		cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-i", "pipe:3", "-c:v", "copy", "-c:a", "aac", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1")
 		cmd.Stdin = vStream
 		cmd.ExtraFiles = []*os.File{streamToFile(aStream)}
 		cmd.Stdout = w
-		cmd.Run()
+
+		if err := cmd.Run(); err != nil {
+			logger.Error("Échec critique FFmpeg", "id", videoID, "error", err)
+		}
 	}
 }
 
