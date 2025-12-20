@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"embed"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +15,9 @@ import (
 // AppLogger est rennomé pour éviter les conflits avec le package "logger" de GORM
 var AppLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
+//go:embed web/*
+var webFS embed.FS
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -21,7 +26,14 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// On extrait le sous-répertoire "web" de l'embed
+	contentStatic, err := fs.Sub(webFS, "/app/web")
+	if err != nil {
+		AppLogger.Error("Erreur chargement assets", "err", err)
+	}
+
 	// StreamHandler sera défini dans handlers.go
+	mux.Handle("/", http.FileServer(http.FS(contentStatic)))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("/api/stream", StreamHandler)
 
@@ -36,7 +48,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	// Attente du VPN définie dans vpn.go
-	// WaitForVPN()
+	WaitForVPN()
 
 	go func() {
 		AppLogger.Info("Serveur DGSynthex démarré", "port", port)
