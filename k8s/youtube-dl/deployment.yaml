@@ -16,8 +16,10 @@ spec:
         app: youtube-dl
     spec:
       containers:
+        # --- CONTENEUR 1 : VPN (Moteur réseau) ---
         - name: vpn
           image: qmcgaw/gluetun:latest
+          imagePullPolicy: Always
           securityContext:
             capabilities:
               add: ["NET_ADMIN"]
@@ -27,7 +29,7 @@ spec:
             - name: VPN_TYPE
               value: "openvpn"
             - name: OPENVPN_PROTOCOL
-              value: "tcp" # On reste en TCP car ça a fonctionné
+              value: "tcp"
             - name: OPENVPN_USER
               valueFrom:
                 secretKeyRef:
@@ -40,7 +42,8 @@ spec:
                   key: password
             - name: SERVER_COUNTRIES
               value: "France"
-    
+
+        # --- CONTENEUR 2 : TON APP GO (Client réseau) ---
         - name: youtube-dl
           image: spadmdck/youtube-dl:latest
           imagePullPolicy: Always
@@ -53,24 +56,31 @@ spec:
             - name: cookies-volume
               mountPath: /etc/youtube-dl/
               readOnly: true
+            # INDISPENSABLE pour yt-dlp et ffmpeg avec readOnlyRootFilesystem
+            - name: tmp-volume
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15 # Augmenté pour laisser le temps au VPN de monter
             periodSeconds: 10
           resources:
             requests:
               memory: "128Mi"
               cpu: "200m"
             limits:
-              memory: "256Mi"
+              memory: "512Mi" # Augmenté pour FFmpeg qui consomme lors du muxing
               cpu: "1000m"
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
+      
       volumes:
         - name: cookies-volume
           secret:
             secretName: youtube-cookies
+        # Volume temporaire en RAM pour yt-dlp/ffmpeg
+        - name: tmp-volume
+          emptyDir: {}
