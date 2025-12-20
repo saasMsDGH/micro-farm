@@ -2,7 +2,10 @@ module github.com/spadmdck/micro-farm/services/youtube-dl
 
 go 1.25.1
 
-require github.com/kkdai/youtube/v2 v2.10.5
+require (
+	github.com/kkdai/youtube/v2 v2.10.5
+	golang.org/x/net v0.35.0
+)
 
 require (
 	github.com/bitly/go-simplejson v0.5.1 // indirect
