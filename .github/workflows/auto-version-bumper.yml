@@ -5,9 +5,7 @@ on:
     branches: [ "master" ]
     paths:
       - 'services/**'
-    # On ignore versions.yaml pour éviter les boucles infinies de commits
-    paths-ignore:
-      - 'versions.yaml'
+      - '!versions.yaml'
 
 jobs:
   bump-version:
