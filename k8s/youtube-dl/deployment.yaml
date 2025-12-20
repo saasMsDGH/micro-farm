@@ -59,6 +59,12 @@ spec:
             # INDISPENSABLE pour yt-dlp et ffmpeg avec readOnlyRootFilesystem
             - name: tmp-volume
               mountPath: /tmp
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            failureThreshold: 30 # Autorise 30 échecs
+            periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
