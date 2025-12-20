@@ -70,16 +70,21 @@ jobs:
     needs: [parse-tag, build-test]
     runs-on: [self-hosted, k8s-deploy] # Ton runner connecté à ton cluster OVH
     steps:
-      - name: Update Kubernetes Deployment
+      - uses: actions/checkout@v4 # Crucial pour avoir accès aux fichiers YAML
+      - name: Deploy to Kubernetes
         run: |
           SERVICE="${{ needs.parse-tag.outputs.service }}"
           VERSION="${{ needs.parse-tag.outputs.version }}"
           IMAGE="${{ secrets.DOCKER_USERNAME }}/$SERVICE:$VERSION"
           
-          echo "🚢 Déploiement de $SERVICE version $VERSION sur K8s..."
+          echo "🚀 Préparation du déploiement pour $SERVICE (image: $IMAGE)"
           
-          # Mise à jour de l'image dans le deployment
-          kubectl set image deployment/$SERVICE $SERVICE=$IMAGE -n apps
-          
-          # Vérification du déploiement
+          # 1. On injecte dynamiquement l'image dans le fichier de déploiement
+          # On remplace l'image par défaut par celle avec le tag de version
+          sed -i "s|image: .*|image: $IMAGE|g" k8s/$SERVICE/deployment.yaml
+
+          # 2. On applique tous les fichiers du dossier (Deployment, Service, Ingress, HPA, etc.)
+          kubectl apply -f k8s/$SERVICE/ -n apps
+
+          # 3. On vérifie que le déploiement se passe bien
           kubectl rollout status deployment/$SERVICE -n apps
