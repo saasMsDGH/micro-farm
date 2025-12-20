@@ -36,7 +36,7 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	// Attente du VPN définie dans vpn.go
-	WaitForVPN()
+	// WaitForVPN()
 
 	go func() {
 		AppLogger.Info("Serveur DGSynthex démarré", "port", port)
