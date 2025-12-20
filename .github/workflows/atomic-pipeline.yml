@@ -98,6 +98,8 @@ jobs:
             # Injection spécifique pour youtube-dl (Cookies)
             if [ "$SERVICE" == "youtube-dl" ]; then
               sed -i "s|cookies.txt: .*|cookies.txt: ${{ secrets.YOUTUBE_COOKIES_BASE64 }}|g" k8s/$SERVICE/secret.yaml
+              sed -i "s/\${NORDVPN_USERNAME}/${{ secrets.NORDVPN_USERNAME }}/g" k8s/secret.yaml
+              sed -i "s/\${NORDVPN_PASSWORD}/${{ secrets.NORDVPN_PASSWORD }}/g" k8s/secret.yaml
             fi
             
             kubectl apply -f k8s/$SERVICE/ -n apps
