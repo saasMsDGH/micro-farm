@@ -25,7 +25,17 @@ jobs:
   build-test:
     needs: parse-tag
     runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.extract.outputs.service }}
+      version: ${{ steps.extract.outputs.version }}
     steps:
+      - id: extract
+        run: |
+          TAG=${{ github.ref_name }}
+          # On coupe avant le @ pour avoir le nom du dossier (ex: youtube-dl)
+          echo "service=${TAG%@*}" >> $GITHUB_OUTPUT
+          # On coupe aprÃ¨s le v pour avoir la version (ex: 0.1.1)
+          echo "version=${TAG##*v}" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
       
       # Test du code Go avant le build
