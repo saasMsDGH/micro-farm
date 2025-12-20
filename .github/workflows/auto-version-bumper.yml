@@ -25,28 +25,33 @@ jobs:
       - name: Identify and Bump Services
         id: bumper
         run: |
-          # Liste des services modifiés
+          # 1. Récupérer le dernier message de commit
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          
+          # 2. Identifier les services modifiés
           CHANGED_SERVICES=$(git diff --name-only HEAD^ HEAD | grep '^services/' | cut -d/ -f2 | sort -u)
           
-          if [ -z "$CHANGED_SERVICES" ]; then
-            echo "Aucun service à bumper."
-            exit 0
-          fi
-
           for SERVICE in $CHANGED_SERVICES; do
             if [ -d "services/$SERVICE" ]; then
               CURRENT_VER=$(yq ".services.$SERVICE" versions.yaml)
-              
-              # Logique simple de bump de patch (ex: 1.0.4 -> 1.0.5)
               IFS='.' read -r major minor patch <<< "$CURRENT_VER"
-              NEW_PATCH=$((patch + 1))
-              NEW_VER="$major.$minor.$NEW_PATCH"
               
-              echo "📈 Bumping $SERVICE : $CURRENT_VER -> $NEW_VER"
+              # 3. Logique de décision selon le message de commit
+              if [[ "$COMMIT_MSG" == *"BREAKING CHANGE"* ]] || [[ "$COMMIT_MSG" =~ [a-z]+\!: ]]; then
+                NEW_VER="$((major + 1)).0.0"
+                echo "🚨 MAJOR Bump for $SERVICE"
+              elif [[ "$COMMIT_MSG" =~ ^feat: ]]; then
+                NEW_VER="$major.$((minor + 1)).0"
+                echo "✨ MINOR Bump for $SERVICE"
+              else
+                NEW_VER="$major.$minor.$((patch + 1))"
+                echo "🐛 PATCH Bump for $SERVICE"
+              fi
+              
               yq -i ".services.$SERVICE = \"$NEW_VER\"" versions.yaml
             fi
           done
-
+          
       - name: Commit and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
