@@ -1,0 +1,105 @@
+name: 🚀 Atomic Pipeline (Check -> Build -> Deploy)
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - "services/**"
+      - "versions.yaml"
+
+jobs:
+  # ÉTAPE 1 : VALIDATION & TESTS
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      
+      - name: Run Tests for all services
+        run: |
+          for dir in services/*/; do
+            if [ -f "${dir}go.mod" ]; then
+              echo "🧪 Testing $dir..."
+              cd $dir && go test ./... && cd ../..
+            fi
+          done
+
+  # ÉTAPE 2 : DÉTECTION DES CHANGEMENTS & BUILD
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      changed_services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect Version Changes
+        id: detect
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
+          
+          SERVICES_TO_BUILD=""
+          for s in $(yq '.services | keys | .[]' versions.yaml); do
+            OLD_V=$(git show HEAD^:versions.yaml | yq ".services.$s" 2>/dev/null || echo "0.0.0")
+            NEW_V=$(yq ".services.$s" versions.yaml)
+            
+            if [ "$OLD_V" != "$NEW_V" ]; then
+              echo "🎯 Change detected for $s: $OLD_V -> $NEW_V"
+              SERVICES_TO_BUILD="$SERVICES_TO_BUILD $s:$NEW_V"
+            fi
+          done
+          echo "services=$SERVICES_TO_BUILD" >> $GITHUB_OUTPUT
+
+      - name: Docker Login
+        if: steps.detect.outputs.services != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build & Push Images
+        if: steps.detect.outputs.services != ''
+        run: |
+          for item in ${{ steps.detect.outputs.services }}; do
+            SERVICE=${item%:*}
+            VERSION=${item#*:}
+            echo "📦 Building $SERVICE:$VERSION"
+            docker build . --file Dockerfile --build-arg SERVICE_NAME=$SERVICE \
+              --tag ${{ secrets.DOCKER_USERNAME }}/$SERVICE:$VERSION \
+              --tag ${{ secrets.DOCKER_USERNAME }}/$SERVICE:latest
+            docker push ${{ secrets.DOCKER_USERNAME }}/$SERVICE:$VERSION
+            docker push ${{ secrets.DOCKER_USERNAME }}/$SERVICE:latest
+          done
+
+  # ÉTAPE 3 : DÉPLOIEMENT (SELF-HOSTED)
+  deploy:
+    needs: [validate, build]
+    if: needs.build.outputs.changed_services != ''
+    runs-on: [self-hosted, k8s-deploy]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to K8s
+        run: |
+          for item in ${{ needs.build.outputs.changed_services }}; do
+            SERVICE=${item%:*}
+            VERSION=${item#*:}
+            IMAGE="${{ secrets.DOCKER_USERNAME }}/$SERVICE:$VERSION"
+            
+            echo "🚀 Deploying $SERVICE:$VERSION to OVH Cluster"
+            
+            # Injection des valeurs dans les manifests
+            sed -i "s|image: .*|image: $IMAGE|g" k8s/$SERVICE/deployment.yaml
+            
+            # Injection spécifique pour youtube-dl (Cookies)
+            if [ "$SERVICE" == "youtube-dl" ]; then
+              sed -i "s|cookies.txt: .*|cookies.txt: ${{ secrets.YOUTUBE_COOKIES_BASE64 }}|g" k8s/$SERVICE/secret.yaml
+            fi
+            
+            kubectl apply -f k8s/$SERVICE/ -n apps
+            kubectl rollout status deployment/$SERVICE -n apps
+          done
