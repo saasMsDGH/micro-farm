@@ -14,9 +14,6 @@ import (
 var AppLogger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 func main() {
-	// Attente du VPN définie dans vpn.go
-	WaitForVPN()
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -25,8 +22,10 @@ func main() {
 	mux := http.NewServeMux()
 
 	// StreamHandler sera défini dans handlers.go
-	mux.HandleFunc("/api/stream", StreamHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	// Attente du VPN définie dans vpn.go
+	WaitForVPN()
+	mux.HandleFunc("/api/stream", StreamHandler)
 
 	server := &http.Server{
 		Addr:         ":" + port,
