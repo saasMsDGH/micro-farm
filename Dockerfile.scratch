@@ -1,60 +1,64 @@
 # ==============================================================================
-# BASE BUILDER
+# BASE BUILDER (Cache les outils communs)
 # ==============================================================================
 FROM golang:1.25-alpine AS builder
 
+# Arguments passés par le build command (ex: --build-arg SERVICE_NAME=youtube-dl)
 ARG SERVICE_NAME
+
 WORKDIR /build
 
+# Installation des dépendances système (Certificats, Git)
 RUN apk add --no-cache git ca-certificates tzdata
 
-# Cache des dépendances
+# 1. On prépare le dossier du service spécifique
+# On assume que le build context est la racine du monorepo
 COPY services/${SERVICE_NAME}/go.mod services/${SERVICE_NAME}/go.sum ./services/${SERVICE_NAME}/
+# Si tu as un dossier pkg partagé à la racine
+# COPY pkg/ ./pkg/
+
+# 2. Download des dépendances (Cache Docker optimisé)
 WORKDIR /build/services/${SERVICE_NAME}
 RUN go mod download
 
-# Compilation statique
+# 3. Copie du code source complet du service
 COPY services/${SERVICE_NAME}/ .
+
+# 4. Compilation Statique (Comme dans ton projet Klaro)
+# CGO_ENABLED=0 est vital pour scratch
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server .
 
-# ==============================================================================
-# PROVIDER FFMPEG STATIQUE
-# ==============================================================================
+
+# 2. PROVIDER FFMPEG STATIQUE
 FROM alpine:latest AS ffmpeg-provider
 RUN wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
     && tar xvf ffmpeg-release-amd64-static.tar.xz \
-    && mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ \
-    && mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/
+    && mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/
 
 # ==============================================================================
-# FINAL IMAGE (Alpine pour supporter Python/yt-dlp)
+# FINAL IMAGE (Scratch - Ultra léger ~10-20Mo)
 # ==============================================================================
-FROM alpine:3.20
+FROM scratch
 
 ARG SERVICE_NAME
 
-# Dépendances pour yt-dlp (Python)
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    ca-certificates \
-    tzdata \
-    curl \
-    && pip3 install --break-system-packages yt-dlp
-
-# Récupération des assets du builder
+# Import des fichiers système essentiels
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=ffmpeg-provider /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
-COPY --from=ffmpeg-provider /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+
+# Copie du binaire
 COPY --from=builder /app/server /server
-COPY --from=builder /build/services/${SERVICE_NAME}/web /app/web
 
-WORKDIR /app
+# Si le service a des assets statiques (ex: frontend minimal), on les copie conditionnellement
+# (Note: COPY ne supporte pas de condition, donc on copie tout le dossier s'il existe, 
+# mais ici on assume une convention: si un dossier 'web' existe, il est copié)
+COPY --from=builder /build/services/${SERVICE_NAME}/web* /static/
 
-# Sécurité : User 10001 (Non-root)
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 10001
+# User non-privilégié (Standardisation UID 10001)
 USER 10001
 
 EXPOSE 8080
+
 ENTRYPOINT ["/server"]

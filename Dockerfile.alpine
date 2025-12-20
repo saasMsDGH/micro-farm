@@ -1,0 +1,27 @@
+# Build stage
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o dgsynthex .
+
+# Final stage
+FROM alpine:3.19
+# Installation des dépendances pour yt-dlp et le débug
+RUN apk add --no-cache \
+    ca-certificates \
+    ffmpeg \
+    python3 \
+    py3-pip \
+    curl
+
+# Installation de yt-dlp (plus résistant que la lib Go)
+RUN pip3 install --break-system-packages yt-dlp
+
+WORKDIR /app
+COPY --from=builder /app/dgsynthex .
+COPY web/ ./web/
+
+# On garde l'utilisateur non-root pour la sécurité sur k3s
+USER 10001
+EXPOSE 8080
+CMD ["./dgsynthex"]
