@@ -27,9 +27,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	// On extrait le sous-répertoire "web" de l'embed
-	contentStatic, err := fs.Sub(webFS, "/app/web")
+	contentStatic, err := fs.Sub(webFS, "web")
 	if err != nil {
-		AppLogger.Error("Erreur chargement assets", "err", err)
+		// Si ça échoue ici, il faut arrêter le programme tout de suite
+		// pour éviter le panic plus tard
+		AppLogger.Error("Erreur fatale : impossible de lire les assets embed", "err", err)
+		os.Exit(1)
 	}
 
 	// StreamHandler sera défini dans handlers.go
