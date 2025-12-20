@@ -1,25 +1,28 @@
 # 🚜 Go Micro Farm - Orchestrator
 
-Ce projet est un mono-repo Go conçu pour orchestrer des micro-services avec une gestion GitOps intégrale.
+Ce projet est un mono-repo Go conçu pour orchestrer des micro-services via un pipeline de déploiement atomique sur Kubernetes.
 
 ## 📂 Structure
 - **`services/`** : Code source des applications (ex: `youtube-dl`).
-- **`k8s/`** : Déploiements Kubernetes par service.
-- **`versions.yaml`** : Source de vérité des versions déployées.
+- **`k8s/`** : Manifestes Kubernetes par service.
+- **`versions.yaml`** : Fichier pivot de la plateforme (Source de vérité des versions).
 
-## 🚀 Cinématique CI/CD
-Le flux est entièrement automatisé via GitHub Actions :
+## 🚀 Cinématique de Déploiement Atomique
+La CI/CD repose sur un principe simple : **Un seul commit contient le code et le changement de version.**
 
-1. **Commit** : Un push sur `master` avec un préfixe (`fix:`, `feat:`) déclenche le **Bumper**.
-2. **Bumper** : Incrémente `versions.yaml` selon le type de commit et push le changement.
-3. **Tagger** : Détecte le changement dans `versions.yaml` et crée un tag Git (ex: `youtube-dl@v0.1.9`).
-4. **Pipeline** : Détecte le tag, construit l'image Docker et déploie sur le cluster.
+1. **Développement local** : Modifiez le code dans `services/`.
+2. **Versioning** : Exécutez `make patch s=nom-service` pour mettre à jour `versions.yaml`.
+3. **Commit Unique** : `git commit -am "fix: description"`.
+4. **Pipeline unique** :
+    - **Check** : Validation de tous les modules Go.
+    - **Build** : Détecte le changement de version, build l'image Docker et la push.
+    - **Deploy** : Injecte l'image et déploie sur le cluster via le runner self-hosted.
 
 ## 🛠️ Makefile
-- `make dev service=x` : Développement avec Hot Reload.
-- `make init-all` : Initialise les modules Go.
-- `make tag service=x v=1.0.0` : Forcer un tag manuellement.
-- `make untag service=x v=1.0.0` : Supprimer un tag proprement.
+- `make patch s=x` : Incrémente la version patch.
+- `make minor s=x` : Incrémente la version mineure.
+- `make dev service=x` : Lancement local avec Hot Reload (Air).
+- `make tidy-all` : Nettoie les dépendances Go de tous les services.
 
-## 🍪 youtube-dl
-Service de streaming avec muxing FFmpeg. Utilise `/etc/youtube-dl/cookies.txt` pour bypasser les restrictions.
+---
+*DGSynthex - Orchestrateur Micro-services*

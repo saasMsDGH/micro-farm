@@ -1,60 +1,67 @@
 <!DOCTYPE html>
-<html lang="fr" class="dark">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MicroDl HD</title>
+    <title>GoTube - DGSynthex</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background: #0f172a; color: white; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-    </style>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="glass p-10 rounded-3xl shadow-2xl w-full max-w-lg space-y-6 text-center">
-        <h1 class="text-4xl font-black bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent">MicroDl</h1>
-        
-        <input type="text" id="ytUrl" placeholder="Coller l'URL YouTube" 
-               class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl focus:ring-2 focus:ring-red-500 outline-none">
-        
-        <div class="flex gap-2">
-            <select id="res" class="bg-slate-800 border border-slate-700 p-4 rounded-xl flex-1">
-                <option value="720">720p (Normal)</option>
-                <option value="1080">1080p (HD - Muxing)</option>
-                <option value="max">4K (Qualité Max)</option>
+<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-2xl w-full space-y-8 bg-slate-800 p-10 rounded-3xl shadow-2xl border border-slate-700">
+        <h1 class="text-4xl font-black text-center text-red-500 tracking-tight">GOTUBE</h1>
+        <div class="flex flex-col gap-4">
+            <input type="text" id="ytUrl" placeholder="URL YouTube (ex: https://www.youtube.com/watch?v=...)" 
+                   class="w-full bg-slate-700 border-none rounded-xl p-4 text-white focus:ring-2 focus:ring-red-500 outline-none">
+            <select id="res" class="bg-slate-700 rounded-xl p-4 border-none outline-none focus:ring-2 focus:ring-red-500">
+                <option value="720">720p (Direct)</option>
+                <option value="1080">1080p (HD Muxing)</option>
             </select>
-            <button onclick="startDownload()" class="bg-red-600 px-6 py-4 rounded-xl font-bold hover:bg-red-500 transition-all">Télécharger</button>
+            <button id="dlBtn" onclick="startDownload()" class="bg-red-600 px-6 py-4 rounded-xl font-bold hover:bg-red-500 transition-all">Télécharger</button>
         </div>
-        <p id="msg" class="text-sm text-slate-500"></p>
+        <p id="msg" class="text-sm text-slate-400 text-center"></p>
     </div>
 
     <script>
-        function startDownload() {
+        async function startDownload() {
             const url = document.getElementById('ytUrl').value;
             const q = document.getElementById('res').value;
+            const msg = document.getElementById('msg');
+            const btn = document.getElementById('dlBtn');
             const match = url.match(/(?:v=|\/)([a-zA-Z0-9_-]{11})/);
             
-            if (!match) return alert("URL invalide");
+            if (!match) return alert("URL YouTube invalide");
 
-            document.getElementById('msg').innerText = "Veuillez patienter pendant le traitement...";
+            msg.innerText = "⏳ Préparation du flux...";
+            msg.classList.replace('text-slate-400', 'text-blue-400');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
 
-            // L'astuce Initiator : On crée un formulaire et on le soumet
-            // Cela fait passer l'appel pour une navigation document standard
-            const form = document.createElement('form');
-            form.method = 'GET';
-            form.action = '/api/stream';
-            
-            const vInput = document.createElement('input');
-            vInput.name = 'v'; vInput.value = match[1];
-            
-            const qInput = document.createElement('input');
-            qInput.name = 'q'; qInput.value = q;
+            try {
+                const response = await fetch('/api/stream?v=' + match[1] + '&q=' + q);
+                
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || "Erreur de restriction YouTube");
+                }
 
-            form.appendChild(vInput);
-            form.appendChild(qInput);
-            document.body.appendChild(form);
-            form.submit();
-            document.body.removeChild(form);
+                msg.innerText = "✅ Téléchargement commencé !";
+                msg.classList.replace('text-blue-400', 'text-green-400');
+                
+                // Déclenchement du téléchargement navigateur
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = match[1] + ".mp4";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (err) {
+                msg.innerText = "❌ " + err.message;
+                msg.classList.replace('text-blue-400', 'text-red-400');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
         }
     </script>
 </body>
