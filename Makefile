@@ -56,6 +56,26 @@ untag:
 	git push origin --delete $(service)@v$(v)
 	@echo "✅ Tag supprimé (local et remote)."
 
+# Usage: make bump-patch s=youtube-dl
+bump-patch:
+	@V=$$(yq ".services.$(s)" versions.yaml); \
+	NV=$$(echo $$V | awk -F. '{print $$1"."$$2"."$$3+1}'); \
+	yq -i ".services.$(s) = \"$$NV\"" versions.yaml; \
+	echo "✅ $(s): $$V -> $$NV"
+
+# Usage: make bump-minor s=youtube-dl
+bump-minor:
+	@V=$$(yq ".services.$(s)" versions.yaml); \
+	NV=$$(echo $$V | awk -F. '{print $$1"."$$2+1".0"}'); \
+	yq -i ".services.$(s) = \"$$NV\"" versions.yaml; \
+	echo "✅ $(s): $$V -> $$NV"
+
+# Usage: make bump-major s=youtube-dl
+bump-major:
+	@V=$$(yq ".services.$(s)" versions.yaml); \
+	NV=$$(echo $$V | awk -F. '{print $$1+1".0.0"}'); \
+	yq -i ".services.$(s) = \"$$NV\"" versions.yaml; \
+	echo "✅ $(s): $$V -> $$NV"
 
 # ==============================================================================
 # 0. OUTILS & SECRETS
