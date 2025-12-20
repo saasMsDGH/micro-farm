@@ -88,6 +88,17 @@ func main() {
 			logger.Error("Erreur fatale serveur", "error", err)
 		}
 	}()
+	// Vérification de l'IP publique au démarrage
+	go func() {
+		resp, err := http.Get("https://ifconfig.me")
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			logger.Info("Vérification IP Publique", "ip", string(body))
+			resp.Body.Close()
+		} else {
+			logger.Warn("Impossible de vérifier l'IP publique", "error", err)
+		}
+	}()
 
 	<-stop
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
