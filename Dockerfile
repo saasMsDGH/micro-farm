@@ -15,7 +15,7 @@ RUN apk add --no-cache git ca-certificates tzdata
 # On assume que le build context est la racine du monorepo
 COPY services/${SERVICE_NAME}/go.mod services/${SERVICE_NAME}/go.sum ./services/${SERVICE_NAME}/
 # Si tu as un dossier pkg partagé à la racine
-COPY pkg/ ./pkg/
+# COPY pkg/ ./pkg/
 
 # 2. Download des dépendances (Cache Docker optimisé)
 WORKDIR /build/services/${SERVICE_NAME}
