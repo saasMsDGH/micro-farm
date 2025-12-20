@@ -5,7 +5,7 @@ metadata:
   namespace: apps
   labels:
     # Ce label doit correspondre au serviceMonitorSelector de ton instance Prometheus
-    release: prometheus 
+    release: monitoring 
     app: youtube-dl
 spec:
   selector:
