@@ -21,7 +21,7 @@ AIR_BIN := $(GOPATH)/bin/air
 # Récupère la liste dynamique des dossiers dans services/
 SERVICES := $(shell ls $(SERVICES_DIR))
 
-.PHONY: help init-all tidy-all create-service dev docker install-tools kill-port
+.PHONY: help init-all tidy-all create-service dev docker install-tools kill-port sync-cookies-auto tag untag
 
 help:
 	@echo "Usage:"
@@ -31,14 +31,73 @@ help:
 	@echo "  make create-service name=x Crée un nouveau microservice"
 	@echo "  make dev service=x         Lance un service avec Hot Reload"
 	@echo "  make docker service=x      Construit l'image Docker d'un service"
+	@echo "  make sync-cookies          Nettoie et envoie les cookies vers GitHub Secrets"
+
+
+# --- GESTION DES RELEASES (CI/CD) ---
+
+# Usage: make tag service=youtube-dl v=0.1.8
+tag:
+	@if [ -z "$(service)" ] || [ -z "$(v)" ]; then \
+		echo "❌ Erreur: Usage 'make tag service=nom v=1.0.0'"; exit 1; \
+	fi
+	@echo "🏷️  Création du tag $(service)@v$(v)..."
+	git tag $(service)@v$(v)
+	git push origin $(service)@v$(v)
+	@echo "🚀 Tag poussé. La CI/CD va démarrer le build."
+
+# Usage: make untag service=youtube-dl v=0.1.8
+untag:
+	@if [ -z "$(service)" ] || [ -z "$(v)" ]; then \
+		echo "❌ Erreur: Usage 'make untag service=nom v=1.0.0'"; exit 1; \
+	fi
+	@echo "🗑️  Suppression du tag $(service)@v$(v)..."
+	git tag -d $(service)@v$(v)
+	git push origin --delete $(service)@v$(v)
+	@echo "✅ Tag supprimé (local et remote)."
+
 
 # ==============================================================================
-# 0. OUTILS
+# 0. OUTILS & SECRETS
 # ==============================================================================
 install-tools:
 	@echo "🛠️  Installation de Air..."
 	@go install github.com/air-verse/air@latest
 	@echo "✅ Air installé dans $(AIR_BIN)"
+
+sync-cookies:
+	@if [ ! -f "cookies.txt" ]; then echo "❌ Erreur: cookies.txt introuvable à la racine."; exit 1; fi
+	@if ! command -v gh &> /dev/null; then echo "❌ Erreur: GitHub CLI (gh) n'est pas installé."; exit 1; fi
+	
+	@echo "🧹 Nettoyage agressif des cookies (Filtre SSO Google/YouTube)..."
+	@grep -E "youtube.com|google.com" cookies.txt | \
+	 grep -vE "notube|juridica|meet|doubleclick|analytics|_ga|_gid|ads|mail|drive|workspace|calendar|chromewebstore|docs|blog|lefigaro|markal|sporst|johackim|sports|ogs|jeuxvideo|play|uneo|leparisien|lesnumeriques|doc-ubuntu|iledefrance" \
+	 > cookies_safe.txt
+	
+	@SIZE=$$(ls -lh cookies_safe.txt | awk '{print $$5}'); \
+	echo "📦 Taille du fichier nettoyé : $$SIZE"; \
+	
+	@echo "🚀 Encodage Base64 et mise à jour du secret GitHub..."
+	@gh secret set YOUTUBE_COOKIES_BASE64 --body "$$(cat cookies_safe.txt | base64 -w 0)"
+	
+	@rm cookies_safe.txt
+	@echo "✅ Secret YOUTUBE_COOKIES_BASE64 mis à jour avec succès !"
+
+sync-cookies-auto:
+	@echo "🔍 Extraction des cookies (Déchiffrement Keyring)..."
+	@python3 extract_cookies.py
+	
+	@echo "🧹 Nettoyage des domaines inutiles..."
+	@# On filtre pour ne garder que l'identité YouTube et le SSO Google
+	@grep -E "youtube.com|google.com" cookies.txt | \
+	 grep -vE "doubleclick|analytics|_ga|_gid|ads|mail|drive|workspace|calendar|meet" \
+	 > cookies_safe.txt
+	
+	@echo "🚀 Mise à jour du Secret GitHub..."
+	@gh secret set YOUTUBE_COOKIES_BASE64 --body "$$(cat cookies_safe.txt | base64 -w 0)"
+	
+	@rm cookies.txt cookies_safe.txt
+	@echo "✅ Identité synchronisée pour vos serveurs OVH." 
 
 # ==============================================================================
 # 1. INITIALISATION DE MASSE

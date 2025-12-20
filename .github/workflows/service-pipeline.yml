@@ -79,12 +79,15 @@ jobs:
           
           echo "🚀 Préparation du déploiement pour $SERVICE (image: $IMAGE)"
           
-          # 1. On injecte dynamiquement l'image dans le fichier de déploiement
-          # On remplace l'image par défaut par celle avec le tag de version
+          # 1. Injection de l'image dans le Deployment
           sed -i "s|image: .*|image: $IMAGE|g" k8s/$SERVICE/deployment.yaml
 
-          # 2. On applique tous les fichiers du dossier (Deployment, Service, Ingress, HPA, etc.)
+          # 2. Injection du Secret YouTube depuis GitHub Secrets
+          # On remplace le placeholder par la valeur du secret GitHub
+          sed -i "s|cookies.txt: .*|cookies.txt: ${{ secrets.YOUTUBE_COOKIES_BASE64 }}|g" k8s/$SERVICE/secret.yaml
+
+          # 3. Application de la configuration complète (incluant le nouveau secret)
           kubectl apply -f k8s/$SERVICE/ -n apps
 
-          # 3. On vérifie que le déploiement se passe bien
+          # 4. Vérification du déploiement
           kubectl rollout status deployment/$SERVICE -n apps

@@ -2,7 +2,7 @@ name: 🗂 Release Coordinator
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
     paths: [ "versions.yaml" ]
 
 jobs:

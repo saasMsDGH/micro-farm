@@ -7,7 +7,7 @@ spec:
   selector:
     app: youtube-dl
   ports:
-    - name: http
+    - name: http        # Défini pour correspondre au ServiceMonitor
       protocol: TCP
       port: 80
       targetPort: 8080

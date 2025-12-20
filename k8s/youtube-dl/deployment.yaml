@@ -24,25 +24,28 @@ spec:
           env:
             - name: PORT
               value: "8080"
-          
-          # Healthcheck : vital pour le rolling update sans coupure
+          volumeMounts:
+            - name: cookies-volume
+              mountPath: /etc/youtube-dl/
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /health
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
-          
           resources:
             requests:
               memory: "128Mi"
               cpu: "200m"
             limits:
-              # 256Mi est parfait pour ton algo de streaming (io.Copy)
               memory: "256Mi"
               cpu: "1000m"
-
           securityContext:
-            readOnlyRootFilesystem: true # Sécurité renforcée : pas d'écriture disque
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
+      volumes:
+        - name: cookies-volume
+          secret:
+            secretName: youtube-cookies
