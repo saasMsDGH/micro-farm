@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -22,20 +24,44 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 // StreamHandler gère l'appel à yt-dlp
 func StreamHandler(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+
+	err := rc.SetWriteDeadline(time.Time{}) // time.Time{} = zéro (infini)
+	if err != nil {
+		AppLogger.Error("Impossible de modifier le deadline", "err", err)
+	}
+
 	videoID := r.URL.Query().Get("v")
 	if videoID == "" {
-		http.Error(w, "ID Vidéo manquant", http.StatusBadRequest)
+		http.Error(w, "ID Manquant", 400)
 		return
 	}
 
-	// Utilisation de la fonction définie dans downloader.go
+	// 1. On récupère l'URL du flux via yt-dlp
 	streamURL, err := GetStreamURL(videoID)
 	if err != nil {
-		AppLogger.Error("Erreur yt-dlp", "id", videoID, "err", err)
-		http.Error(w, "Erreur de récupération du flux", http.StatusInternalServerError)
+		AppLogger.Error("Erreur extraction", "id", videoID, "err", err)
+		http.Error(w, "Erreur YouTube", 500)
 		return
 	}
 
-	// Pour l'instant, on redirige vers l'URL directe (ou on peut faire un proxy io.Copy)
-	http.Redirect(w, r, streamURL, http.StatusTemporaryRedirect)
+	// 2. On crée une requête vers YouTube depuis le serveur
+	resp, err := http.Get(streamURL)
+	if err != nil {
+		http.Error(w, "Erreur de connexion au flux", 502)
+		return
+	}
+	defer resp.Body.Close()
+
+	// 3. On recopie les headers importants pour le navigateur
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.mp4\"", videoID))
+
+	// 4. On "Pipe" le flux en temps réel (Streaming)
+	// io.Copy ne consomme pas de RAM, il transfère les paquets au fur et à mesure
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		AppLogger.Error("Erreur pendant le streaming", "err", err)
+	}
 }

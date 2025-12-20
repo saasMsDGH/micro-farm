@@ -41,10 +41,12 @@ func main() {
 	mux.HandleFunc("/api/stream", StreamHandler)
 
 	server := &http.Server{
-		Addr:         ":" + port,
-		Handler:      LoggingMiddleware(mux), // Défini dans handlers.go
-		ReadTimeout:  30 * time.Minute,
-		WriteTimeout: 30 * time.Minute,
+		Addr:              ":" + port,
+		Handler:           LoggingMiddleware(mux), // Défini dans handlers.go
+		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       30 * time.Minute,
+		WriteTimeout:      30 * time.Minute,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	stop := make(chan os.Signal, 1)
