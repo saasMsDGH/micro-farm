@@ -18,7 +18,7 @@ jobs:
           # Extraction du nom du service et de la version depuis le tag
           # Exemple : youtube-dl/v1.0.4 -> service=youtube-dl, version=1.0.4
           TAG=${{ github.ref_name }}
-          echo "service=${TAG%/*}" >> $GITHUB_OUTPUT
+          echo "service=${TAG%%@*}" >> $GITHUB_OUTPUT
           echo "version=${TAG##*v}" >> $GITHUB_OUTPUT
 
   # STEP 2 : BUILD & TEST
