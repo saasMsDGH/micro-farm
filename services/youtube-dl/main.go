@@ -23,8 +23,6 @@ func main() {
 
 	// StreamHandler sera défini dans handlers.go
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	// Attente du VPN définie dans vpn.go
-	WaitForVPN()
 	mux.HandleFunc("/api/stream", StreamHandler)
 
 	server := &http.Server{
@@ -36,6 +34,9 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Attente du VPN définie dans vpn.go
+	WaitForVPN()
 
 	go func() {
 		AppLogger.Info("Serveur DGSynthex démarré", "port", port)
