@@ -84,11 +84,23 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
-      
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 127.0.0.1
+        searches:
+          - apps.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "5"
       volumes:
         - name: cookies-volume
           secret:
             secretName: youtube-cookies
         # Volume temporaire en RAM pour yt-dlp/ffmpeg
         - name: tmp-volume
-          emptyDir: {}
+          emptyDir: 
+            medium: Memory
+            sizeLimit: 256Mi
